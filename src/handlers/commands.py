@@ -6,6 +6,8 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.exceptions import TelegramAPIError
+from datetime import datetime, timedelta
+import pytz
 
 from src.config import config
 from src.logger import logger
@@ -71,11 +73,19 @@ async def cmd_help(message: Message) -> None:
 <b>Команды для администраторов:</b>
 /stats - Показать статистику пересылок за сегодня
 /reset - Сбросить счётчик пересылок
+/ban - Забанить пользователя
+  • Формат: /ban @username hours [reason]
+  • Пример: /ban @user123 24 Спам
 
 <b>Лимиты:</b>
 • {limit} пересылок в сутки
 • Сброс в {reset_hour}:00 МСК
-    """.format(limit=config.DAILY_LIMIT, reset_hour=config.RESET_HOUR)
+• Timeout между анонсами: {timeout} минут
+    """.format(
+        limit=config.DAILY_LIMIT, 
+        reset_hour=config.RESET_HOUR,
+        timeout=config.TIMEOUT_MINUTES
+    )
     
     await message.answer(help_text.strip(), parse_mode="HTML")
     logger.info(f"Help command used by {get_user_display_name(message.from_user)}")
@@ -128,20 +138,149 @@ async def cmd_reset(message: Message) -> None:
     logger.info(f"Forwards reset by admin {get_user_display_name(message.from_user)}, deleted: {deleted}")
 
 
+@router.message(Command("ban"))
+async def cmd_ban(message: Message) -> None:
+    """
+    Обработчик команды /ban.
+    Банит пользователя на указанное количество часов (только для админов).
+    Формат: /ban @username hours [reason]
+    """
+    if not is_correct_chat(message):
+        return
+    
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ Эта команда доступна только администраторам.")
+        logger.warning(f"Unauthorized ban attempt by {get_user_display_name(message.from_user)}")
+        return
+    
+    # Парсим аргументы команды
+    args = message.text.split()[1:]  # Убираем /ban
+    
+    if len(args) < 2:
+        await message.answer(
+            "❌ Неверный формат команды.\n"
+            "Используйте: /ban @username hours [reason]\n"
+            "Пример: /ban @user123 24 Спам"
+        )
+        return
+    
+    # Извлекаем username (убираем @ если есть)
+    target_username = args[0].lstrip('@')
+    
+    # Проверяем количество часов
+    try:
+        hours = int(args[1])
+        if hours <= 0:
+            raise ValueError("Hours must be positive")
+    except ValueError:
+        await message.answer("❌ Количество часов должно быть положительным числом.")
+        return
+    
+    # Извлекаем причину (если есть)
+    reason = " ".join(args[2:]) if len(args) > 2 else None
+    
+    # Получаем информацию о пользователе из сообщения
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target_user = message.reply_to_message.from_user
+        target_user_id = target_user.id
+        target_display_name = get_user_display_name(target_user)
+    else:
+        # Если не ответ на сообщение, пытаемся найти пользователя по username
+        # В реальном боте здесь нужно было бы использовать API Telegram для поиска пользователя
+        await message.answer("❌ Пожалуйста, ответьте на сообщение пользователя, которого хотите забанить.")
+        return
+    
+    # Проверяем, что не баним админа
+    if target_user_id in config.ADMINS:
+        await message.answer("❌ Нельзя забанить администратора.")
+        return
+    
+    # Добавляем бан в базу данных
+    admin_name = get_user_display_name(message.from_user)
+    ban_id = db_repo.add_ban(
+        user_id=target_user_id,
+        username=target_display_name,
+        banned_by=message.from_user.id,
+        banned_by_username=admin_name,
+        hours=hours,
+        reason=reason
+    )
+    
+    # Формируем сообщение о бане
+    ban_text = f"🔨 <b>Пользователь забанен</b>\n\n"
+    ban_text += f"👤 Пользователь: {target_display_name}\n"
+    ban_text += f"⏰ Срок: {hours} часов\n"
+    ban_text += f"👮 Администратор: {admin_name}\n"
+    if reason:
+        ban_text += f"📝 Причина: {reason}\n"
+    
+    await message.answer(ban_text.strip(), parse_mode="HTML")
+    logger.info(f"User {target_display_name} banned by {admin_name} for {hours} hours, reason: {reason}")
+
+
 @router.message(Command("tea"))
 async def cmd_tea(message: Message) -> None:
     """
     Обработчик команды /tea.
-    Публикует сообщение в канале с учётом лимитов.
+    Публикует сообщение в канале с учётом лимитов, timeout и банов.
     """
     if not is_correct_chat(message):
         return
+    
+    user_id = message.from_user.id
+    username = get_user_display_name(message.from_user)
+    
+    # Проверяем, не забанен ли пользователь
+    ban_info = db_repo.is_user_banned(user_id)
+    if ban_info:
+        tz = pytz.timezone(config.TIMEZONE)
+        ban_until = datetime.fromisoformat(ban_info['ban_until']).replace(tzinfo=tz)
+        now = datetime.now(tz)
+        remaining_time = ban_until - now
+        
+        hours = int(remaining_time.total_seconds() // 3600)
+        minutes = int((remaining_time.total_seconds() % 3600) // 60)
+        
+        ban_text = f"🚫 <b>Вы забанены!</b>\n\n"
+        ban_text += f"⏰ Осталось: {hours}ч {minutes}м\n"
+        if ban_info.get('reason'):
+            ban_text += f"📝 Причина: {ban_info['reason']}\n"
+        ban_text += f"👮 Забанил: {ban_info['banned_by_username']}"
+        
+        await message.answer(ban_text.strip(), parse_mode="HTML")
+        logger.warning(f"Banned user {username} tried to use /tea")
+        return
+    
+    # Проверяем timeout между анонсами
+    last_forward_time = db_repo.get_last_forward_time(username)
+    if last_forward_time:
+        tz = pytz.timezone(config.TIMEZONE)
+        if isinstance(last_forward_time, str):
+            last_forward_time = datetime.fromisoformat(last_forward_time).replace(tzinfo=tz)
+        elif last_forward_time.tzinfo is None:
+            last_forward_time = last_forward_time.replace(tzinfo=tz)
+        
+        now = datetime.now(tz)
+        time_since_last = now - last_forward_time
+        timeout_duration = timedelta(minutes=config.TIMEOUT_MINUTES)
+        
+        if time_since_last < timeout_duration:
+            remaining_time = timeout_duration - time_since_last
+            minutes = int(remaining_time.total_seconds() // 60)
+            seconds = int(remaining_time.total_seconds() % 60)
+            
+            await message.answer(
+                f"⏳ Слишком рано! Следующий анонс через {minutes}м {seconds}с",
+                parse_mode="HTML"
+            )
+            logger.warning(f"Timeout violation by {username}, {minutes}m {seconds}s remaining")
+            return
     
     # Проверяем лимит
     today_count = db_repo.get_today_count()
     if today_count >= config.DAILY_LIMIT:
         await message.answer("⏰ Следующий анонс завтра!")
-        logger.warning(f"Limit reached for {get_user_display_name(message.from_user)}")
+        logger.warning(f"Limit reached for {username}")
         return
     
     # Получаем информацию о пользователе

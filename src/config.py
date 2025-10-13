@@ -33,6 +33,7 @@ class Config:
     DAILY_LIMIT: int = int(os.getenv("DAILY_LIMIT", "5"))
     RESET_HOUR: int = int(os.getenv("RESET_HOUR", "4"))
     TIMEZONE: str = os.getenv("TIMEZONE", "Europe/Moscow")
+    TIMEOUT_MINUTES: int = int(os.getenv("TIMEOUT_MINUTES", "30"))
     
     # Пути к файлам
     LOG_FILE: str = os.getenv("LOG_FILE", "logs/teabot.log")
