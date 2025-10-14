@@ -278,6 +278,35 @@ class ForwardsRepository:
             updated = cursor.rowcount
             logger.info(f"Removed ban for user_id={user_id}, updated={updated}")
             return updated
+    
+    def get_monthly_top_users(self, limit: int = 3) -> List[Dict[str, Any]]:
+        """
+        Возвращает топ пользователей за текущий месяц по количеству пересылок.
+        
+        Args:
+            limit: Количество пользователей в топе
+        
+        Returns:
+            List[Dict]: Список пользователей с количеством пересылок
+        """
+        tz = pytz.timezone(config.TIMEZONE)
+        now = datetime.now(tz)
+        
+        # Определяем начало текущего месяца
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT username, COUNT(*) as count 
+                FROM forwards 
+                WHERE datetime >= ? 
+                GROUP BY username 
+                ORDER BY count DESC 
+                LIMIT ?
+            """, (month_start, limit))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
 
 
 # Создаем глобальный экземпляр репозитория

@@ -69,9 +69,9 @@ async def cmd_help(message: Message) -> None:
   • /tea текст с фото - фото с кастомным текстом
 
 /help - Показать это сообщение
+/stats - Показать статистику пересылок и топ-3 за месяц
 
 <b>Команды для администраторов:</b>
-/stats - Показать статистику пересылок за сегодня
 /reset - Сбросить счётчик пересылок
 /ban - Забанить пользователя
   • Формат: /ban @username hours [reason]
@@ -97,14 +97,9 @@ async def cmd_help(message: Message) -> None:
 async def cmd_stats(message: Message) -> None:
     """
     Обработчик команды /stats.
-    Показывает статистику пересылок (только для админов).
+    Показывает статистику пересылок (доступна всем пользователям).
     """
     if not is_correct_chat(message):
-        return
-    
-    if not is_admin(message.from_user.id):
-        await message.answer("❌ Эта команда доступна только администраторам.")
-        logger.warning(f"Unauthorized stats attempt by {get_user_display_name(message.from_user)}")
         return
     
     today_count = db_repo.get_today_count()
@@ -135,15 +130,28 @@ async def cmd_stats(message: Message) -> None:
     else:
         timeout_info = "\n✅ Анонс можно отправить сейчас"
     
+    # Получаем топ-3 пользователей за месяц
+    monthly_top = db_repo.get_monthly_top_users(3)
+    top_users_text = ""
+    
+    if monthly_top:
+        top_users_text = "\n\n🏆 <b>Топ-3 за месяц:</b>"
+        medals = ["🥇", "🥈", "🥉"]
+        for i, user in enumerate(monthly_top):
+            medal = medals[i] if i < len(medals) else "🏅"
+            top_users_text += f"\n{medal} {user['username']}: {user['count']} раз"
+    else:
+        top_users_text = "\n\n🏆 <b>Топ-3 за месяц:</b>\nПока нет данных"
+    
     stats_text = f"""
 📊 <b>Статистика пересылок</b>
 
 Сегодня отправлено: {today_count}/{config.DAILY_LIMIT}
-Осталось: {remaining}{timeout_info}
+Осталось: {remaining}{timeout_info}{top_users_text}
     """
     
     await message.answer(stats_text.strip(), parse_mode="HTML")
-    logger.info(f"Stats viewed by admin {get_user_display_name(message.from_user)}")
+    logger.info(f"Stats viewed by {get_user_display_name(message.from_user)}")
 
 
 @router.message(Command("reset"))
