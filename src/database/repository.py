@@ -175,22 +175,27 @@ class ForwardsRepository:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
     
-    def get_last_forward_time(self, username: str) -> Optional[datetime]:
+    def get_last_forward_time(self, username: str = None) -> Optional[datetime]:
         """
-        Возвращает время последней пересылки пользователя.
+        Возвращает время последней пересылки (глобально или для конкретного пользователя).
         
         Args:
-            username: Имя пользователя
+            username: Имя пользователя (если None, возвращает последнюю пересылку любого пользователя)
         
         Returns:
             Optional[datetime]: Время последней пересылки или None
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT datetime FROM forwards WHERE username = ? ORDER BY datetime DESC LIMIT 1",
-                (username,)
-            )
+            if username:
+                cursor.execute(
+                    "SELECT datetime FROM forwards WHERE username = ? ORDER BY datetime DESC LIMIT 1",
+                    (username,)
+                )
+            else:
+                cursor.execute(
+                    "SELECT datetime FROM forwards ORDER BY datetime DESC LIMIT 1"
+                )
             result = cursor.fetchone()
             return result["datetime"] if result else None
     

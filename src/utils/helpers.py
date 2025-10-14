@@ -72,8 +72,8 @@ def format_tea_caption(username: str, custom_text: Optional[str] = None) -> str:
         str: Отформатированная подпись
     """
     if custom_text:
-        return f'Чай. "{custom_text}" by {username}'
-    return f"Чай by {username}"
+        return f'🍵 🍃 Чай. "{custom_text}"\nby {username}'
+    return f"🍵 🍃 Чай 🫖 🫖\nby {username}"
 
 
 def get_message_type(message: Message) -> str:

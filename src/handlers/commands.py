@@ -76,6 +76,8 @@ async def cmd_help(message: Message) -> None:
 /ban - Забанить пользователя
   • Формат: /ban @username hours [reason]
   • Пример: /ban @user123 24 Спам
+/unban - Разбанить пользователя
+  • Формат: /unban @username или ответ на сообщение
 
 <b>Лимиты:</b>
 • {limit} пересылок в сутки
@@ -108,11 +110,36 @@ async def cmd_stats(message: Message) -> None:
     today_count = db_repo.get_today_count()
     remaining = max(0, config.DAILY_LIMIT - today_count)
     
+    # Получаем время последней пересылки (глобально)
+    last_forward_time = db_repo.get_last_forward_time()
+    timeout_info = ""
+    
+    if last_forward_time:
+        tz = pytz.timezone(config.TIMEZONE)
+        if isinstance(last_forward_time, str):
+            last_forward_time = datetime.fromisoformat(last_forward_time).replace(tzinfo=tz)
+        elif last_forward_time.tzinfo is None:
+            last_forward_time = last_forward_time.replace(tzinfo=tz)
+        
+        now = datetime.now(tz)
+        time_since_last = now - last_forward_time
+        timeout_duration = timedelta(minutes=config.TIMEOUT_MINUTES)
+        
+        if time_since_last < timeout_duration:
+            remaining_time = timeout_duration - time_since_last
+            minutes = int(remaining_time.total_seconds() // 60)
+            seconds = int(remaining_time.total_seconds() % 60)
+            timeout_info = f"\n⏳ До следующего анонса: {minutes}м {seconds}с"
+        else:
+            timeout_info = "\n✅ Анонс можно отправить сейчас"
+    else:
+        timeout_info = "\n✅ Анонс можно отправить сейчас"
+    
     stats_text = f"""
 📊 <b>Статистика пересылок</b>
 
 Сегодня отправлено: {today_count}/{config.DAILY_LIMIT}
-Осталось: {remaining}
+Осталось: {remaining}{timeout_info}
     """
     
     await message.answer(stats_text.strip(), parse_mode="HTML")
@@ -218,6 +245,65 @@ async def cmd_ban(message: Message) -> None:
     logger.info(f"User {target_display_name} banned by {admin_name} for {hours} hours, reason: {reason}")
 
 
+@router.message(Command("unban"))
+async def cmd_unban(message: Message) -> None:
+    """
+    Обработчик команды /unban.
+    Снимает бан с пользователя (только для админов).
+    Формат: /unban @username или ответ на сообщение пользователя
+    """
+    if not is_correct_chat(message):
+        return
+    
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ Эта команда доступна только администраторам.")
+        logger.warning(f"Unauthorized unban attempt by {get_user_display_name(message.from_user)}")
+        return
+    
+    # Получаем информацию о пользователе из сообщения
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target_user = message.reply_to_message.from_user
+        target_user_id = target_user.id
+        target_display_name = get_user_display_name(target_user)
+    else:
+        # Если не ответ на сообщение, пытаемся найти пользователя по username
+        args = message.text.split()[1:]  # Убираем /unban
+        
+        if len(args) < 1:
+            await message.answer(
+                "❌ Неверный формат команды.\n"
+                "Используйте: /unban @username\n"
+                "Или ответьте на сообщение пользователя командой /unban"
+            )
+            return
+        
+        # Извлекаем username (убираем @ если есть)
+        target_username = args[0].lstrip('@')
+        await message.answer("❌ Пожалуйста, ответьте на сообщение пользователя, которого хотите разбанить.")
+        return
+    
+    # Проверяем, забанен ли пользователь
+    ban_info = db_repo.is_user_banned(target_user_id)
+    if not ban_info:
+        await message.answer(f"ℹ️ Пользователь {target_display_name} не забанен.")
+        return
+    
+    # Снимаем бан
+    removed_count = db_repo.remove_ban(target_user_id)
+    
+    if removed_count > 0:
+        admin_name = get_user_display_name(message.from_user)
+        
+        unban_text = f"✅ <b>Пользователь разбанен</b>\n\n"
+        unban_text += f"👤 Пользователь: {target_display_name}\n"
+        unban_text += f"👮 Администратор: {admin_name}"
+        
+        await message.answer(unban_text.strip(), parse_mode="HTML")
+        logger.info(f"User {target_display_name} unbanned by {admin_name}")
+    else:
+        await message.answer(f"❌ Ошибка при снятии бана с пользователя {target_display_name}.")
+
+
 @router.message(Command("tea"))
 async def cmd_tea(message: Message) -> None:
     """
@@ -251,8 +337,8 @@ async def cmd_tea(message: Message) -> None:
         logger.warning(f"Banned user {username} tried to use /tea")
         return
     
-    # Проверяем timeout между анонсами
-    last_forward_time = db_repo.get_last_forward_time(username)
+    # Проверяем timeout между анонсами (глобально для всех пользователей)
+    last_forward_time = db_repo.get_last_forward_time()
     if last_forward_time:
         tz = pytz.timezone(config.TIMEZONE)
         if isinstance(last_forward_time, str):
@@ -273,7 +359,7 @@ async def cmd_tea(message: Message) -> None:
                 f"⏳ Слишком рано! Следующий анонс через {minutes}м {seconds}с",
                 parse_mode="HTML"
             )
-            logger.warning(f"Timeout violation by {username}, {minutes}m {seconds}s remaining")
+            logger.warning(f"Global timeout violation by {username}, {minutes}m {seconds}s remaining")
             return
     
     # Проверяем лимит
