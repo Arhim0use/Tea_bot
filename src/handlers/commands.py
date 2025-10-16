@@ -16,6 +16,7 @@ from src.utils.helpers import (
     get_user_display_name,
     extract_custom_text,
     format_tea_caption,
+    format_quote_caption,
     get_message_type
 )
 
@@ -74,6 +75,11 @@ async def cmd_help(message: Message) -> None:
   • /{config.MAIN_COMMAND} с фото - фото с подписью
   • /{config.MAIN_COMMAND} текст с фото - фото с кастомным текстом
 
+/quot - Опубликовать случайную цитату в канале
+  • Просто /quot - текстовая цитата
+  • /quot с фото - фото с цитатой в подписи
+  • Работает аналогично /{config.MAIN_COMMAND}
+
 /help - Показать это сообщение
 /stats - Показать статистику пересылок и топ-3 за месяц (доступно {stats_access})
 /reset - Сбросить счётчик пересылок (доступно {reset_access})
@@ -84,7 +90,7 @@ async def cmd_help(message: Message) -> None:
   • Формат: /unban @username или ответ на сообщение
 
 <b>Лимиты:</b>
-• {config.DAILY_LIMIT} пересылок в сутки
+• {config.DAILY_LIMIT} пересылок в сутки (для всех команд)
 • Сброс в {config.RESET_HOUR}:00 МСК
 • Timeout между анонсами: {config.TIMEOUT_MINUTES} минут
     """
@@ -443,4 +449,128 @@ async def cmd_tea(message: Message) -> None:
     except Exception as e:
         await message.answer("❌ Произошла непредвиденная ошибка.")
         logger.error(f"Unexpected error in tea command: {e}")
+
+
+@router.message(Command("quot"))
+async def cmd_quot(message: Message) -> None:
+    """
+    Обработчик команды /quot.
+    Публикует случайную цитату в канале с учётом лимитов, timeout и банов.
+    Работает аналогично команде /tea, но вместо "Чай" отправляет случайную цитату.
+    """
+    if not is_correct_chat(message):
+        return
+    
+    user_id = message.from_user.id
+    username = get_user_display_name(message.from_user)
+    
+    # Проверяем, не забанен ли пользователь
+    ban_info = db_repo.is_user_banned(user_id)
+    if ban_info:
+        tz = pytz.timezone(config.TIMEZONE)
+        ban_until = datetime.fromisoformat(ban_info['ban_until']).replace(tzinfo=tz)
+        now = datetime.now(tz)
+        remaining_time = ban_until - now
+        
+        hours = int(remaining_time.total_seconds() // 3600)
+        minutes = int((remaining_time.total_seconds() % 3600) // 60)
+        
+        ban_text = f"🚫 <b>Вы забанены!</b>\n\n"
+        ban_text += f"⏰ Осталось: {hours}ч {minutes}м\n"
+        if ban_info.get('reason'):
+            ban_text += f"📝 Причина: {ban_info['reason']}\n"
+        ban_text += f"👮 Забанил: {ban_info['banned_by_username']}"
+        
+        await message.answer(ban_text.strip(), parse_mode="HTML")
+        logger.warning(f"Banned user {username} tried to use /quot")
+        return
+    
+    # Проверяем timeout между анонсами (глобально для всех пользователей)
+    last_forward_time = db_repo.get_last_forward_time()
+    if last_forward_time:
+        tz = pytz.timezone(config.TIMEZONE)
+        if isinstance(last_forward_time, str):
+            last_forward_time = datetime.fromisoformat(last_forward_time).replace(tzinfo=tz)
+        elif last_forward_time.tzinfo is None:
+            last_forward_time = last_forward_time.replace(tzinfo=tz)
+        
+        now = datetime.now(tz)
+        time_since_last = now - last_forward_time
+        timeout_duration = timedelta(minutes=config.TIMEOUT_MINUTES)
+        
+        if time_since_last < timeout_duration:
+            remaining_time = timeout_duration - time_since_last
+            minutes = int(remaining_time.total_seconds() // 60)
+            seconds = int(remaining_time.total_seconds() % 60)
+            
+            await message.answer(
+                f"⏳ Слишком рано! Следующий анонс через {minutes}м {seconds}с",
+                parse_mode="HTML"
+            )
+            logger.warning(f"Global timeout violation by {username}, {minutes}m {seconds}s remaining")
+            return
+    
+    # Проверяем лимит
+    today_count = db_repo.get_today_count()
+    if today_count >= config.DAILY_LIMIT:
+        await message.answer("⏰ Следующий анонс завтра!")
+        logger.warning(f"Limit reached for {username}")
+        return
+    
+    # Получаем информацию о пользователе
+    username = get_user_display_name(message.from_user)
+    message_type = get_message_type(message)
+    
+    # Формируем подпись с цитатой
+    caption = format_quote_caption(username)
+    
+    try:
+        # Отправляем в канал в зависимости от типа сообщения
+        if message.photo:
+            # Берём фото с наибольшим разрешением
+            photo = message.photo[-1]
+            await message.bot.send_photo(
+                chat_id=config.CHANNEL_ID,
+                photo=photo.file_id,
+                caption=caption
+            )
+        elif message.video:
+            await message.bot.send_video(
+                chat_id=config.CHANNEL_ID,
+                video=message.video.file_id,
+                caption=caption
+            )
+        elif message.video_note:
+            # Видео-заметки не поддерживают caption
+            await message.bot.send_video_note(
+                chat_id=config.CHANNEL_ID,
+                video_note=message.video_note.file_id
+            )
+            # Отправляем caption отдельным сообщением
+            await message.bot.send_message(
+                chat_id=config.CHANNEL_ID,
+                text=caption
+            )
+        else:
+            # Текстовое сообщение
+            await message.bot.send_message(
+                chat_id=config.CHANNEL_ID,
+                text=caption
+            )
+        
+        # Записываем в БД
+        db_repo.add_forward(username, message_type)
+        
+        # Обновляем счётчик
+        remaining = config.DAILY_LIMIT - today_count - 1
+        await message.answer(f"✅ Отправлено! Осталось {remaining} пересылок.")
+        
+        logger.info(f"Sent {message_type} quote by {username}")
+        
+    except TelegramAPIError as e:
+        await message.answer("❌ Ошибка при отправке сообщения в канал.")
+        logger.error(f"Failed to send message to channel: {e}")
+    except Exception as e:
+        await message.answer("❌ Произошла непредвиденная ошибка.")
+        logger.error(f"Unexpected error in quot command: {e}")
 
