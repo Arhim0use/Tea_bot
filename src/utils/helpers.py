@@ -2,6 +2,7 @@
 Вспомогательные функции для бота.
 """
 
+from random import randint
 from typing import Optional
 from aiogram.types import User, Message
 
@@ -59,6 +60,12 @@ def extract_custom_text(message: Message) -> Optional[str]:
     # Если после удаления команды остался текст, возвращаем его
     return text if text else None
 
+def get_random_teamoji() -> str:
+    """
+    Возвращает случайный эмодзи чая.
+    """
+    teamojies = ["🍵", "🫖", "🌱", "🍃", "🍯", "🍫", "🍪", " "]
+    return teamojies[randint(0, len(teamojies) - 1)]
 
 def format_tea_caption(username: str, custom_text: Optional[str] = None) -> str:
     """
@@ -72,8 +79,8 @@ def format_tea_caption(username: str, custom_text: Optional[str] = None) -> str:
         str: Отформатированная подпись
     """
     if custom_text:
-        return f'🍵 🍃 Чай. "{custom_text}"\nby {username}'
-    return f"🍵 🍃 Чай 🫖 🫖\nby {username}"
+        return f'{get_random_teamoji()} {get_random_teamoji()} Чай. "{custom_text}"\nby {username}'
+    return f"{get_random_teamoji()} {get_random_teamoji()} Чай {get_random_teamoji()} {get_random_teamoji()}\nby {username}"
 
 
 def get_message_type(message: Message) -> str:
