@@ -58,36 +58,36 @@ async def cmd_help(message: Message) -> None:
     if not is_correct_chat(message):
         return
     
-    help_text = """
+    # Определяем доступность команд
+    stats_access = "всем" if not config.STATS_ADMIN_ONLY else "администраторам"
+    reset_access = "всем" if not config.RESET_ADMIN_ONLY else "администраторам"
+    ban_access = "всем" if not config.BAN_ADMIN_ONLY else "администраторам"
+    unban_access = "всем" if not config.UNBAN_ADMIN_ONLY else "администраторам"
+    
+    help_text = f"""
 🍵 <b>TeaBot v3.0 - Справка</b>
 
 <b>Доступные команды:</b>
 
-/tea - Опубликовать анонс в канале
-  • Просто /tea - стандартный анонс
-  • /tea с фото - фото с подписью
-  • /tea текст с фото - фото с кастомным текстом
+/{config.MAIN_COMMAND} - Опубликовать анонс в канале
+  • Просто /{config.MAIN_COMMAND} - стандартный анонс
+  • /{config.MAIN_COMMAND} с фото - фото с подписью
+  • /{config.MAIN_COMMAND} текст с фото - фото с кастомным текстом
 
 /help - Показать это сообщение
-/stats - Показать статистику пересылок и топ-3 за месяц
-
-<b>Команды для администраторов:</b>
-/reset - Сбросить счётчик пересылок
-/ban - Забанить пользователя
+/stats - Показать статистику пересылок и топ-3 за месяц (доступно {stats_access})
+/reset - Сбросить счётчик пересылок (доступно {reset_access})
+/ban - Забанить пользователя (доступно {ban_access})
   • Формат: /ban @username hours [reason]
   • Пример: /ban @user123 24 Спам
-/unban - Разбанить пользователя
+/unban - Разбанить пользователя (доступно {unban_access})
   • Формат: /unban @username или ответ на сообщение
 
 <b>Лимиты:</b>
-• {limit} пересылок в сутки
-• Сброс в {reset_hour}:00 МСК
-• Timeout между анонсами: {timeout} минут
-    """.format(
-        limit=config.DAILY_LIMIT, 
-        reset_hour=config.RESET_HOUR,
-        timeout=config.TIMEOUT_MINUTES
-    )
+• {config.DAILY_LIMIT} пересылок в сутки
+• Сброс в {config.RESET_HOUR}:00 МСК
+• Timeout между анонсами: {config.TIMEOUT_MINUTES} минут
+    """
     
     await message.answer(help_text.strip(), parse_mode="HTML")
     logger.info(f"Help command used by {get_user_display_name(message.from_user)}")
@@ -97,9 +97,15 @@ async def cmd_help(message: Message) -> None:
 async def cmd_stats(message: Message) -> None:
     """
     Обработчик команды /stats.
-    Показывает статистику пересылок (доступна всем пользователям).
+    Показывает статистику пересылок.
     """
     if not is_correct_chat(message):
+        return
+    
+    # Проверяем права доступа
+    if config.STATS_ADMIN_ONLY and not is_admin(message.from_user.id):
+        await message.answer("❌ Эта команда доступна только администраторам.")
+        logger.warning(f"Unauthorized stats attempt by {get_user_display_name(message.from_user)}")
         return
     
     today_count = db_repo.get_today_count()
@@ -158,12 +164,13 @@ async def cmd_stats(message: Message) -> None:
 async def cmd_reset(message: Message) -> None:
     """
     Обработчик команды /reset.
-    Сбрасывает счётчик пересылок (только для админов).
+    Сбрасывает счётчик пересылок.
     """
     if not is_correct_chat(message):
         return
     
-    if not is_admin(message.from_user.id):
+    # Проверяем права доступа
+    if config.RESET_ADMIN_ONLY and not is_admin(message.from_user.id):
         await message.answer("❌ Эта команда доступна только администраторам.")
         logger.warning(f"Unauthorized reset attempt by {get_user_display_name(message.from_user)}")
         return
@@ -177,13 +184,14 @@ async def cmd_reset(message: Message) -> None:
 async def cmd_ban(message: Message) -> None:
     """
     Обработчик команды /ban.
-    Банит пользователя на указанное количество часов (только для админов).
+    Банит пользователя на указанное количество часов.
     Формат: /ban @username hours [reason]
     """
     if not is_correct_chat(message):
         return
     
-    if not is_admin(message.from_user.id):
+    # Проверяем права доступа
+    if config.BAN_ADMIN_ONLY and not is_admin(message.from_user.id):
         await message.answer("❌ Эта команда доступна только администраторам.")
         logger.warning(f"Unauthorized ban attempt by {get_user_display_name(message.from_user)}")
         return
@@ -257,13 +265,14 @@ async def cmd_ban(message: Message) -> None:
 async def cmd_unban(message: Message) -> None:
     """
     Обработчик команды /unban.
-    Снимает бан с пользователя (только для админов).
+    Снимает бан с пользователя.
     Формат: /unban @username или ответ на сообщение пользователя
     """
     if not is_correct_chat(message):
         return
     
-    if not is_admin(message.from_user.id):
+    # Проверяем права доступа
+    if config.UNBAN_ADMIN_ONLY and not is_admin(message.from_user.id):
         await message.answer("❌ Эта команда доступна только администраторам.")
         logger.warning(f"Unauthorized unban attempt by {get_user_display_name(message.from_user)}")
         return
@@ -312,7 +321,7 @@ async def cmd_unban(message: Message) -> None:
         await message.answer(f"❌ Ошибка при снятии бана с пользователя {target_display_name}.")
 
 
-@router.message(Command("tea"))
+@router.message(Command(config.MAIN_COMMAND))
 async def cmd_tea(message: Message) -> None:
     """
     Обработчик команды /tea.

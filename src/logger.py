@@ -16,13 +16,19 @@ def setup_logger() -> logging.Logger:
     Returns:
         logging.Logger: Настроенный логгер
     """
-    # Создаем директорию для логов если её нет
-    log_path = Path(config.LOG_FILE)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    
     # Создаем логгер
     logger = logging.getLogger("TeaBot")
     logger.setLevel(logging.INFO)
+    
+    # Если логирование отключено, возвращаем логгер без хендлеров
+    if not config.ENABLE_LOGGING:
+        # Добавляем NullHandler чтобы избежать ошибок
+        logger.addHandler(logging.NullHandler())
+        return logger
+    
+    # Создаем директорию для логов если её нет
+    log_path = Path(config.LOG_FILE)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     
     # Форматтер для логов
     formatter = logging.Formatter(

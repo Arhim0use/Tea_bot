@@ -39,6 +39,18 @@ class Config:
     LOG_FILE: str = os.getenv("LOG_FILE", "logs/teabot.log")
     DB_PATH: str = os.getenv("DB_PATH", "data/forwards.db")
     
+    # Настройки логирования
+    ENABLE_LOGGING: bool = os.getenv("ENABLE_LOGGING", "true").lower() == "true"
+    
+    # Настройки команд
+    MAIN_COMMAND: str = os.getenv("MAIN_COMMAND", "tea")
+    
+    # Настройки доступа к командам (true = только админы, false = все пользователи)
+    BAN_ADMIN_ONLY: bool = os.getenv("BAN_ADMIN_ONLY", "true").lower() == "true"
+    UNBAN_ADMIN_ONLY: bool = os.getenv("UNBAN_ADMIN_ONLY", "true").lower() == "true"
+    STATS_ADMIN_ONLY: bool = os.getenv("STATS_ADMIN_ONLY", "false").lower() == "true"
+    RESET_ADMIN_ONLY: bool = os.getenv("RESET_ADMIN_ONLY", "true").lower() == "true"
+    
     @classmethod
     def validate(cls) -> bool:
         """
