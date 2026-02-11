@@ -19,6 +19,14 @@ from src.utils.helpers import (
     format_quote_caption,
     get_message_type
 )
+from src.utils.charts import (
+    create_hours_chart,
+    create_weekdays_chart,
+    create_days_chart,
+    create_months_chart,
+    get_month_name,
+    get_weekday_name
+)
 
 # Создаем роутер для обработчиков
 router = Router()
@@ -82,6 +90,12 @@ async def cmd_help(message: Message) -> None:
 
 /help - Показать это сообщение
 /stats - Показать статистику пересылок и топ-3 за месяц (доступно {stats_access})
+  • <code>/stats</code> - статистика за текущий месяц
+  • <code>/stats 1-12</code> - статистика за конкретный месяц
+  • <code>/stats year</code> - статистика за текущий год с графиком
+  • <code>/stats all</code> - статистика за все время
+  • <code>/stats hour</code> - график активности по часам
+  • <code>/stats weekday</code> - график активности по дням недели
 /reset - Сбросить счётчик пересылок (доступно {reset_access})
 /ban - Забанить пользователя (доступно {ban_access})
   • Формат: /ban @username hours [reason]
@@ -104,6 +118,7 @@ async def cmd_stats(message: Message) -> None:
     """
     Обработчик команды /stats.
     Показывает статистику пересылок.
+    Поддерживает параметры: месяц (1-12), year, all, hour, weekday
     """
     if not is_correct_chat(message):
         return
@@ -114,56 +129,256 @@ async def cmd_stats(message: Message) -> None:
         logger.warning(f"Unauthorized stats attempt by {get_user_display_name(message.from_user)}")
         return
     
-    today_count = db_repo.get_today_count()
-    remaining = max(0, config.DAILY_LIMIT - today_count)
+    tz = pytz.timezone(config.TIMEZONE)
+    now = datetime.now(tz)
     
-    # Получаем время последней пересылки (глобально)
-    last_forward_time = db_repo.get_last_forward_time()
-    timeout_info = ""
+    # Парсим параметры команды
+    command_parts = message.text.split()
+    param = command_parts[1].lower() if len(command_parts) > 1 else None
     
-    if last_forward_time:
-        tz = pytz.timezone(config.TIMEZONE)
-        if isinstance(last_forward_time, str):
-            last_forward_time = datetime.fromisoformat(last_forward_time).replace(tzinfo=tz)
-        elif last_forward_time.tzinfo is None:
-            last_forward_time = last_forward_time.replace(tzinfo=tz)
+    # Если параметров нет, показываем стандартную статистику за текущий месяц
+    if param is None:
+        today_count = db_repo.get_today_count()
+        remaining = max(0, config.DAILY_LIMIT - today_count)
         
-        now = datetime.now(tz)
-        time_since_last = now - last_forward_time
-        timeout_duration = timedelta(minutes=config.TIMEOUT_MINUTES)
+        # Получаем время последней пересылки (глобально)
+        last_forward_time = db_repo.get_last_forward_time()
+        timeout_info = ""
         
-        if time_since_last < timeout_duration:
-            remaining_time = timeout_duration - time_since_last
-            minutes = int(remaining_time.total_seconds() // 60)
-            seconds = int(remaining_time.total_seconds() % 60)
-            timeout_info = f"\n⏳ До следующего анонса: {minutes}м {seconds}с"
+        if last_forward_time:
+            if isinstance(last_forward_time, str):
+                last_forward_time = datetime.fromisoformat(last_forward_time).replace(tzinfo=tz)
+            elif last_forward_time.tzinfo is None:
+                last_forward_time = last_forward_time.replace(tzinfo=tz)
+            
+            time_since_last = now - last_forward_time
+            timeout_duration = timedelta(minutes=config.TIMEOUT_MINUTES)
+            
+            if time_since_last < timeout_duration:
+                remaining_time = timeout_duration - time_since_last
+                minutes = int(remaining_time.total_seconds() // 60)
+                seconds = int(remaining_time.total_seconds() % 60)
+                timeout_info = f"\n⏳ До следующего анонса: {minutes}м {seconds}с"
+            else:
+                timeout_info = "\n✅ Анонс можно отправить сейчас"
         else:
             timeout_info = "\n✅ Анонс можно отправить сейчас"
-    else:
-        timeout_info = "\n✅ Анонс можно отправить сейчас"
-    
-    # Получаем топ-3 пользователей за месяц
-    monthly_top = db_repo.get_monthly_top_users(3)
-    top_users_text = ""
-    
-    if monthly_top:
-        top_users_text = "\n\n🏆 <b>Топ-3 за месяц:</b>"
-        medals = ["🥇", "🥈", "🥉"]
-        for i, user in enumerate(monthly_top):
-            medal = medals[i] if i < len(medals) else "🏅"
-            top_users_text += f"\n{medal} {user['username']}: {user['count']} раз"
-    else:
-        top_users_text = "\n\n🏆 <b>Топ-3 за месяц:</b>\nПока нет данных"
-    
-    stats_text = f"""
+        
+        # Получаем топ-3 пользователей за месяц
+        monthly_top = db_repo.get_monthly_top_users(3)
+        top_users_text = ""
+        
+        if monthly_top:
+            top_users_text = "\n\n🏆 <b>Топ-3 за месяц:</b>"
+            medals = ["🥇", "🥈", "🥉"]
+            for i, user in enumerate(monthly_top):
+                medal = medals[i] if i < len(medals) else "🏅"
+                top_users_text += f"\n{medal} {user['username']}: {user['count']} раз"
+        else:
+            top_users_text = "\n\n🏆 <b>Топ-3 за месяц:</b>\nПока нет данных"
+        
+        stats_text = f"""
 📊 <b>Статистика пересылок</b>
 
 Сегодня отправлено: {today_count}/{config.DAILY_LIMIT}
 Осталось: {remaining}{timeout_info}{top_users_text}
-    """
+        """
+        
+        await message.answer(stats_text.strip(), parse_mode="HTML")
+        logger.info(f"Stats viewed by {get_user_display_name(message.from_user)}")
+        return
     
-    await message.answer(stats_text.strip(), parse_mode="HTML")
-    logger.info(f"Stats viewed by {get_user_display_name(message.from_user)}")
+    try:
+        # Обработка параметров
+        if param == "hour" or param == "hours":
+            # Статистика по часам за все время работы бота
+            # Используем очень раннюю дату и текущую дату
+            all_time_start = datetime(2000, 1, 1, 0, 0, 0, tzinfo=tz)
+            all_time_end = now
+            
+            stats_data = db_repo.get_stats_by_hours(all_time_start, all_time_end)
+            users_list = db_repo.get_all_users_in_period(all_time_start, all_time_end)
+            
+            period_label = "все время"
+            
+            # Формируем текст
+            users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+            stats_text = f"""
+📊 <b>Статистика активности по часам</b>
+📅 Период: {period_label}
+
+👥 <b>Участники:</b>
+{users_text}
+            """
+            
+            # Создаем график
+            chart_buf = create_hours_chart(stats_data, period_label)
+            
+            await message.answer_photo(
+                photo=chart_buf,
+                caption=stats_text.strip(),
+                parse_mode="HTML"
+            )
+            chart_buf.close()
+            
+        elif param == "weekday" or param == "weekdays":
+            # Статистика по дням недели за все время работы бота
+            # Используем очень раннюю дату и текущую дату
+            all_time_start = datetime(2000, 1, 1, 0, 0, 0, tzinfo=tz)
+            all_time_end = now
+            
+            stats_data = db_repo.get_stats_by_weekdays(all_time_start, all_time_end)
+            users_list = db_repo.get_all_users_in_period(all_time_start, all_time_end)
+            
+            period_label = "все время"
+            
+            # Формируем текст
+            users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+            stats_text = f"""
+📊 <b>Статистика активности по дням недели</b>
+📅 Период: {period_label}
+
+👥 <b>Участники:</b>
+{users_text}
+            """
+            
+            # Создаем график
+            chart_buf = create_weekdays_chart(stats_data, period_label)
+            
+            await message.answer_photo(
+                photo=chart_buf,
+                caption=stats_text.strip(),
+                parse_mode="HTML"
+            )
+            chart_buf.close()
+            
+        elif param == "year":
+            # Статистика за текущий год
+            year_start = datetime(now.year, 1, 1, 0, 0, 0, tzinfo=tz)
+            year_end = datetime(now.year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
+            
+            stats = db_repo.get_stats_by_year(now.year)
+            users_list = db_repo.get_all_users_in_period(year_start, year_end)
+            
+            # Формируем текст
+            users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+            stats_text = f"""
+📊 <b>Статистика за {now.year} год</b>
+📈 Всего пересылок: {stats['total_count']}
+
+👥 <b>Участники:</b>
+{users_text}
+            """
+            
+            # Создаем график по месяцам
+            if stats['monthly_stats']:
+                chart_buf = create_months_chart(stats['monthly_stats'], now.year)
+                
+                await message.answer_photo(
+                    photo=chart_buf,
+                    caption=stats_text.strip(),
+                    parse_mode="HTML"
+                )
+                chart_buf.close()
+            else:
+                await message.answer(stats_text.strip(), parse_mode="HTML")
+                
+        elif param == "all":
+            # Статистика за все время
+            stats = db_repo.get_stats_all_time()
+            
+            # Формируем текст
+            users_text = "\n".join([f"  • {user['username']} ({user['count']} раз)" for user in stats['users'][:20]]) if stats['users'] else "  • Нет данных"
+            if len(stats['users']) > 20:
+                users_text += f"\n  ... и еще {len(stats['users']) - 20} участников"
+            
+            stats_text = f"""
+📊 <b>Статистика за все время</b>
+📈 Всего пересылок: {stats['total_count']}
+
+👥 <b>Участники:</b>
+{users_text}
+            """
+            
+            await message.answer(stats_text.strip(), parse_mode="HTML")
+            
+        else:
+            # Попытка распознать номер месяца (1-12)
+            try:
+                month_number = int(param)
+                if month_number < 1 or month_number > 12:
+                    raise ValueError("Invalid month")
+                
+                # Проверяем, что месяц не в будущем (ограничение: текущий месяц - 11 месяцев)
+                current_month = now.month
+                current_year = now.year
+                
+                # Вычисляем год для запрашиваемого месяца
+                if month_number > current_month:
+                    # Месяц в прошлом году
+                    target_year = current_year - 1
+                else:
+                    target_year = current_year
+                
+                # Проверяем ограничение (текущий месяц - 11 месяцев назад)
+                months_ago = (current_year - target_year) * 12 + (current_month - month_number)
+                if months_ago > 11:
+                    await message.answer("❌ Доступна статистика только за последние 12 месяцев.")
+                    return
+                
+                # Проверяем, не будущий ли это месяц
+                if target_year > current_year or (target_year == current_year and month_number > current_month):
+                    await message.answer("⏳ Ждем ваши чаепития в будущем! 🍵")
+                    return
+                
+                stats = db_repo.get_stats_by_month(month_number, target_year)
+                users_list = db_repo.get_all_users_in_period(stats['start_date'], stats['end_date'])
+                
+                month_name = get_month_name(month_number)
+                period_label = f"{month_name} {target_year}"
+                
+                # Формируем текст
+                users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+                stats_text = f"""
+📊 <b>Статистика за {period_label}</b>
+📈 Всего пересылок: {stats['total_count']}
+
+👥 <b>Участники:</b>
+{users_text}
+                """
+                
+                # Создаем график по дням месяца
+                if stats['total_count'] > 0:
+                    days_stats = db_repo.get_stats_by_days(month_number, target_year)
+                    chart_buf = create_days_chart(days_stats, month_name, target_year)
+                    
+                    await message.answer_photo(
+                        photo=chart_buf,
+                        caption=stats_text.strip(),
+                        parse_mode="HTML"
+                    )
+                    chart_buf.close()
+                else:
+                    await message.answer(stats_text.strip(), parse_mode="HTML")
+                    
+            except ValueError:
+                await message.answer(
+                    "❌ Неверный параметр команды.\n\n"
+                    "📖 <b>Доступные варианты:</b>\n"
+                    "• <code>/stats</code> - статистика за текущий месяц\n"
+                    "• <code>/stats 1-12</code> - статистика за конкретный месяц\n"
+                    "• <code>/stats year</code> - статистика за текущий год\n"
+                    "• <code>/stats all</code> - статистика за все время\n"
+                    "• <code>/stats hour</code> - активность по часам за все время\n"
+                    "• <code>/stats weekday</code> - активность по дням недели за все время",
+                    parse_mode="HTML"
+                )
+        
+        logger.info(f"Extended stats viewed by {get_user_display_name(message.from_user)}: {param}")
+        
+    except Exception as e:
+        await message.answer("❌ Произошла ошибка при получении статистики.")
+        logger.error(f"Error in stats command: {e}")
 
 
 @router.message(Command("reset"))
