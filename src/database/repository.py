@@ -573,6 +573,29 @@ class ForwardsRepository:
             """, (start_date, end_date))
             rows = cursor.fetchall()
             return [row["username"] for row in rows]
+    
+    def get_users_stats_in_period(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+        """
+        Возвращает статистику пользователей за период с количеством вызовов.
+        
+        Args:
+            start_date: Начало периода
+            end_date: Конец периода
+        
+        Returns:
+            List[Dict]: Список словарей с полями username и count, отсортированный по count DESC
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT username, COUNT(*) as count 
+                FROM forwards 
+                WHERE datetime >= ? AND datetime < ?
+                GROUP BY username 
+                ORDER BY count DESC
+            """, (start_date, end_date))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
 
 
 # Создаем глобальный экземпляр репозитория

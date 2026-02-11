@@ -198,7 +198,7 @@ async def cmd_stats(message: Message) -> None:
             all_time_end = now
             
             stats_data = db_repo.get_stats_by_hours(all_time_start, all_time_end)
-            users_list = db_repo.get_all_users_in_period(all_time_start, all_time_end)
+            users_stats = db_repo.get_users_stats_in_period(all_time_start, all_time_end)
             
             # Проверяем, есть ли данные
             total_count = sum(item['count'] for item in stats_data)
@@ -214,8 +214,8 @@ async def cmd_stats(message: Message) -> None:
             
             period_label = "все время"
             
-            # Формируем текст
-            users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+            # Формируем текст с количеством вызовов
+            users_text = "\n".join([f"  • {user['username']} ({user['count']} раз)" for user in users_stats]) if users_stats else "  • Нет данных"
             stats_text = f"""
 📊 <b>Статистика активности по часам</b>
 📅 Период: {period_label}
@@ -251,7 +251,7 @@ async def cmd_stats(message: Message) -> None:
             all_time_end = now
             
             stats_data = db_repo.get_stats_by_weekdays(all_time_start, all_time_end)
-            users_list = db_repo.get_all_users_in_period(all_time_start, all_time_end)
+            users_stats = db_repo.get_users_stats_in_period(all_time_start, all_time_end)
             
             # Проверяем, есть ли данные
             total_count = sum(item['count'] for item in stats_data)
@@ -267,8 +267,8 @@ async def cmd_stats(message: Message) -> None:
             
             period_label = "все время"
             
-            # Формируем текст
-            users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+            # Формируем текст с количеством вызовов
+            users_text = "\n".join([f"  • {user['username']} ({user['count']} раз)" for user in users_stats]) if users_stats else "  • Нет данных"
             stats_text = f"""
 📊 <b>Статистика активности по дням недели</b>
 📅 Период: {period_label}
@@ -303,10 +303,9 @@ async def cmd_stats(message: Message) -> None:
             year_end = datetime(now.year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
             
             stats = db_repo.get_stats_by_year(now.year)
-            users_list = db_repo.get_all_users_in_period(year_start, year_end)
             
-            # Формируем текст
-            users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+            # Формируем текст с количеством вызовов из stats['users']
+            users_text = "\n".join([f"  • {user['username']} ({user['count']} раз)" for user in stats['users']]) if stats['users'] else "  • Нет данных"
             stats_text = f"""
 📊 <b>Статистика за {now.year} год</b>
 📈 Всего пересылок: {stats['total_count']}
@@ -393,13 +392,12 @@ async def cmd_stats(message: Message) -> None:
                     return
                 
                 stats = db_repo.get_stats_by_month(month_number, target_year)
-                users_list = db_repo.get_all_users_in_period(stats['start_date'], stats['end_date'])
                 
                 month_name = get_month_name(month_number)
                 period_label = f"{month_name} {target_year}"
                 
-                # Формируем текст
-                users_text = "\n".join([f"  • {user}" for user in users_list]) if users_list else "  • Нет данных"
+                # Формируем текст с количеством вызовов из stats['users']
+                users_text = "\n".join([f"  • {user['username']} ({user['count']} раз)" for user in stats['users']]) if stats['users'] else "  • Нет данных"
                 stats_text = f"""
 📊 <b>Статистика за {period_label}</b>
 📈 Всего пересылок: {stats['total_count']}
