@@ -8,6 +8,7 @@ from aiogram.types import Message
 from aiogram.exceptions import TelegramAPIError
 from datetime import datetime, timedelta
 import pytz
+import traceback
 
 from src.config import config
 from src.logger import logger
@@ -132,9 +133,9 @@ async def cmd_stats(message: Message) -> None:
     tz = pytz.timezone(config.TIMEZONE)
     now = datetime.now(tz)
     
-    # Парсим параметры команды
+    # Парсим параметры команды (берем только первый параметр, игнорируем остальные)
     command_parts = message.text.split()
-    param = command_parts[1].lower() if len(command_parts) > 1 else None
+    param = command_parts[1].lower().strip() if len(command_parts) > 1 else None
     
     # Если параметров нет, показываем стандартную статистику за текущий месяц
     if param is None:
@@ -199,6 +200,17 @@ async def cmd_stats(message: Message) -> None:
             stats_data = db_repo.get_stats_by_hours(all_time_start, all_time_end)
             users_list = db_repo.get_all_users_in_period(all_time_start, all_time_end)
             
+            # Проверяем, есть ли данные
+            total_count = sum(item['count'] for item in stats_data)
+            if total_count == 0:
+                await message.answer(
+                    "📊 <b>Статистика активности по часам</b>\n\n"
+                    "📅 Период: все время\n\n"
+                    "❌ Пока нет данных для отображения графика.",
+                    parse_mode="HTML"
+                )
+                return
+            
             period_label = "все время"
             
             # Формируем текст
@@ -206,20 +218,27 @@ async def cmd_stats(message: Message) -> None:
             stats_text = f"""
 📊 <b>Статистика активности по часам</b>
 📅 Период: {period_label}
+📈 Всего пересылок: {total_count}
 
 👥 <b>Участники:</b>
 {users_text}
             """
             
             # Создаем график
-            chart_buf = create_hours_chart(stats_data, period_label)
-            
-            await message.answer_photo(
-                photo=chart_buf,
-                caption=stats_text.strip(),
-                parse_mode="HTML"
-            )
-            chart_buf.close()
+            try:
+                chart_buf = create_hours_chart(stats_data, period_label)
+                await message.answer_photo(
+                    photo=chart_buf,
+                    caption=stats_text.strip(),
+                    parse_mode="HTML"
+                )
+                chart_buf.close()
+            except Exception as chart_error:
+                logger.error(f"Error creating hours chart: {chart_error}\n{traceback.format_exc()}")
+                await message.answer(
+                    f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
+                    parse_mode="HTML"
+                )
             
         elif param == "weekday" or param == "weekdays":
             # Статистика по дням недели за все время работы бота
@@ -230,6 +249,17 @@ async def cmd_stats(message: Message) -> None:
             stats_data = db_repo.get_stats_by_weekdays(all_time_start, all_time_end)
             users_list = db_repo.get_all_users_in_period(all_time_start, all_time_end)
             
+            # Проверяем, есть ли данные
+            total_count = sum(item['count'] for item in stats_data)
+            if total_count == 0:
+                await message.answer(
+                    "📊 <b>Статистика активности по дням недели</b>\n\n"
+                    "📅 Период: все время\n\n"
+                    "❌ Пока нет данных для отображения графика.",
+                    parse_mode="HTML"
+                )
+                return
+            
             period_label = "все время"
             
             # Формируем текст
@@ -237,20 +267,27 @@ async def cmd_stats(message: Message) -> None:
             stats_text = f"""
 📊 <b>Статистика активности по дням недели</b>
 📅 Период: {period_label}
+📈 Всего пересылок: {total_count}
 
 👥 <b>Участники:</b>
 {users_text}
             """
             
             # Создаем график
-            chart_buf = create_weekdays_chart(stats_data, period_label)
-            
-            await message.answer_photo(
-                photo=chart_buf,
-                caption=stats_text.strip(),
-                parse_mode="HTML"
-            )
-            chart_buf.close()
+            try:
+                chart_buf = create_weekdays_chart(stats_data, period_label)
+                await message.answer_photo(
+                    photo=chart_buf,
+                    caption=stats_text.strip(),
+                    parse_mode="HTML"
+                )
+                chart_buf.close()
+            except Exception as chart_error:
+                logger.error(f"Error creating weekdays chart: {chart_error}\n{traceback.format_exc()}")
+                await message.answer(
+                    f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
+                    parse_mode="HTML"
+                )
             
         elif param == "year":
             # Статистика за текущий год
@@ -271,15 +308,22 @@ async def cmd_stats(message: Message) -> None:
             """
             
             # Создаем график по месяцам
-            if stats['monthly_stats']:
-                chart_buf = create_months_chart(stats['monthly_stats'], now.year)
-                
-                await message.answer_photo(
-                    photo=chart_buf,
-                    caption=stats_text.strip(),
-                    parse_mode="HTML"
-                )
-                chart_buf.close()
+            if stats['monthly_stats'] and stats['total_count'] > 0:
+                try:
+                    chart_buf = create_months_chart(stats['monthly_stats'], now.year)
+                    
+                    await message.answer_photo(
+                        photo=chart_buf,
+                        caption=stats_text.strip(),
+                        parse_mode="HTML"
+                    )
+                    chart_buf.close()
+                except Exception as chart_error:
+                    logger.error(f"Error creating months chart: {chart_error}\n{traceback.format_exc()}")
+                    await message.answer(
+                        f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
+                        parse_mode="HTML"
+                    )
             else:
                 await message.answer(stats_text.strip(), parse_mode="HTML")
                 
@@ -307,28 +351,35 @@ async def cmd_stats(message: Message) -> None:
             try:
                 month_number = int(param)
                 if month_number < 1 or month_number > 12:
-                    raise ValueError("Invalid month")
+                    raise ValueError(f"Месяц должен быть от 1 до 12, получено: {month_number}")
                 
                 # Проверяем, что месяц не в будущем (ограничение: текущий месяц - 11 месяцев)
                 current_month = now.month
                 current_year = now.year
                 
                 # Вычисляем год для запрашиваемого месяца
+                # Если запрашиваемый месяц больше текущего, значит это месяц прошлого года
                 if month_number > current_month:
                     # Месяц в прошлом году
                     target_year = current_year - 1
                 else:
+                    # Месяц текущего года или уже прошедший
                     target_year = current_year
                 
-                # Проверяем ограничение (текущий месяц - 11 месяцев назад)
-                months_ago = (current_year - target_year) * 12 + (current_month - month_number)
-                if months_ago > 11:
-                    await message.answer("❌ Доступна статистика только за последние 12 месяцев.")
-                    return
-                
-                # Проверяем, не будущий ли это месяц
+                # Проверяем, не будущий ли это месяц (должно быть первым)
                 if target_year > current_year or (target_year == current_year and month_number > current_month):
                     await message.answer("⏳ Ждем ваши чаепития в будущем! 🍵")
+                    return
+                
+                # Проверяем ограничение (текущий месяц - 11 месяцев назад)
+                # Вычисляем сколько месяцев назад был запрашиваемый месяц
+                if target_year == current_year:
+                    months_ago = current_month - month_number
+                else:
+                    months_ago = (current_year - target_year) * 12 + (current_month - month_number)
+                
+                if months_ago > 11:
+                    await message.answer("❌ Доступна статистика только за последние 12 месяцев.")
                     return
                 
                 stats = db_repo.get_stats_by_month(month_number, target_year)
@@ -349,15 +400,22 @@ async def cmd_stats(message: Message) -> None:
                 
                 # Создаем график по дням месяца
                 if stats['total_count'] > 0:
-                    days_stats = db_repo.get_stats_by_days(month_number, target_year)
-                    chart_buf = create_days_chart(days_stats, month_name, target_year)
-                    
-                    await message.answer_photo(
-                        photo=chart_buf,
-                        caption=stats_text.strip(),
-                        parse_mode="HTML"
-                    )
-                    chart_buf.close()
+                    try:
+                        days_stats = db_repo.get_stats_by_days(month_number, target_year)
+                        chart_buf = create_days_chart(days_stats, month_name, target_year)
+                        
+                        await message.answer_photo(
+                            photo=chart_buf,
+                            caption=stats_text.strip(),
+                            parse_mode="HTML"
+                        )
+                        chart_buf.close()
+                    except Exception as chart_error:
+                        logger.error(f"Error creating days chart: {chart_error}\n{traceback.format_exc()}")
+                        await message.answer(
+                            f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
+                            parse_mode="HTML"
+                        )
                 else:
                     await message.answer(stats_text.strip(), parse_mode="HTML")
                     
@@ -376,9 +434,23 @@ async def cmd_stats(message: Message) -> None:
         
         logger.info(f"Extended stats viewed by {get_user_display_name(message.from_user)}: {param}")
         
+    except ValueError as ve:
+        # Ошибка валидации параметров - показываем справку
+        await message.answer(
+            "❌ Неверный параметр команды.\n\n"
+            "📖 <b>Доступные варианты:</b>\n"
+            "• <code>/stats</code> - статистика за текущий месяц\n"
+            "• <code>/stats 1-12</code> - статистика за конкретный месяц\n"
+            "• <code>/stats year</code> - статистика за текущий год\n"
+            "• <code>/stats all</code> - статистика за все время\n"
+            "• <code>/stats hour</code> - активность по часам за все время\n"
+            "• <code>/stats weekday</code> - активность по дням недели за все время",
+            parse_mode="HTML"
+        )
+        logger.warning(f"Invalid stats parameter: {param}, error: {ve}")
     except Exception as e:
         await message.answer("❌ Произошла ошибка при получении статистики.")
-        logger.error(f"Error in stats command: {e}")
+        logger.error(f"Error in stats command: {e}\n{traceback.format_exc()}")
 
 
 @router.message(Command("reset"))
