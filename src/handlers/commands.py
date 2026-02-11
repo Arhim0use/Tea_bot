@@ -4,7 +4,7 @@
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, BufferedInputFile
 from aiogram.exceptions import TelegramAPIError
 from datetime import datetime, timedelta
 import pytz
@@ -228,13 +228,14 @@ async def cmd_stats(message: Message) -> None:
             # Создаем график
             try:
                 chart_buf = create_hours_chart(stats_data, period_label)
+                photo_file = BufferedInputFile(chart_buf.read(), filename="hours_chart.png")
+                chart_buf.close()
                 await message.answer_photo(
-                    photo=chart_buf,
+                    photo=photo_file,
                     caption=stats_text.strip(),
                     parse_mode="HTML",
                     disable_notification=True
                 )
-                chart_buf.close()
             except Exception as chart_error:
                 logger.error(f"Error creating hours chart: {chart_error}\n{traceback.format_exc()}")
                 await message.answer(
@@ -280,13 +281,14 @@ async def cmd_stats(message: Message) -> None:
             # Создаем график
             try:
                 chart_buf = create_weekdays_chart(stats_data, period_label)
+                photo_file = BufferedInputFile(chart_buf.read(), filename="weekdays_chart.png")
+                chart_buf.close()
                 await message.answer_photo(
-                    photo=chart_buf,
+                    photo=photo_file,
                     caption=stats_text.strip(),
                     parse_mode="HTML",
                     disable_notification=True
                 )
-                chart_buf.close()
             except Exception as chart_error:
                 logger.error(f"Error creating weekdays chart: {chart_error}\n{traceback.format_exc()}")
                 await message.answer(
@@ -317,14 +319,14 @@ async def cmd_stats(message: Message) -> None:
             if stats['monthly_stats'] and stats['total_count'] > 0:
                 try:
                     chart_buf = create_months_chart(stats['monthly_stats'], now.year)
-                    
+                    photo_file = BufferedInputFile(chart_buf.read(), filename="months_chart.png")
+                    chart_buf.close()
                     await message.answer_photo(
-                        photo=chart_buf,
+                        photo=photo_file,
                         caption=stats_text.strip(),
                         parse_mode="HTML",
                         disable_notification=True
                     )
-                    chart_buf.close()
                 except Exception as chart_error:
                     logger.error(f"Error creating months chart: {chart_error}\n{traceback.format_exc()}")
                     await message.answer(
@@ -411,14 +413,14 @@ async def cmd_stats(message: Message) -> None:
                     try:
                         days_stats = db_repo.get_stats_by_days(month_number, target_year)
                         chart_buf = create_days_chart(days_stats, month_name, target_year)
-                        
+                        photo_file = BufferedInputFile(chart_buf.read(), filename="days_chart.png")
+                        chart_buf.close()
                         await message.answer_photo(
-                            photo=chart_buf,
+                            photo=photo_file,
                             caption=stats_text.strip(),
                             parse_mode="HTML",
                             disable_notification=True
                         )
-                        chart_buf.close()
                     except Exception as chart_error:
                         logger.error(f"Error creating days chart: {chart_error}\n{traceback.format_exc()}")
                         await message.answer(
