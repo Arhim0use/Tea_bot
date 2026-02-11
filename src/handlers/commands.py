@@ -110,7 +110,7 @@ async def cmd_help(message: Message) -> None:
 • Timeout между анонсами: {config.TIMEOUT_MINUTES} минут
     """
     
-    await message.answer(help_text.strip(), parse_mode="HTML")
+    await message.answer(help_text.strip(), parse_mode="HTML", disable_notification=True)
     logger.info(f"Help command used by {get_user_display_name(message.from_user)}")
 
 
@@ -126,7 +126,7 @@ async def cmd_stats(message: Message) -> None:
     
     # Проверяем права доступа
     if config.STATS_ADMIN_ONLY and not is_admin(message.from_user.id):
-        await message.answer("❌ Эта команда доступна только администраторам.")
+        await message.answer("❌ Эта команда доступна только администраторам.", disable_notification=True)
         logger.warning(f"Unauthorized stats attempt by {get_user_display_name(message.from_user)}")
         return
     
@@ -185,7 +185,7 @@ async def cmd_stats(message: Message) -> None:
 Осталось: {remaining}{timeout_info}{top_users_text}
         """
         
-        await message.answer(stats_text.strip(), parse_mode="HTML")
+        await message.answer(stats_text.strip(), parse_mode="HTML", disable_notification=True)
         logger.info(f"Stats viewed by {get_user_display_name(message.from_user)}")
         return
     
@@ -207,7 +207,8 @@ async def cmd_stats(message: Message) -> None:
                     "📊 <b>Статистика активности по часам</b>\n\n"
                     "📅 Период: все время\n\n"
                     "❌ Пока нет данных для отображения графика.",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    disable_notification=True
                 )
                 return
             
@@ -230,14 +231,16 @@ async def cmd_stats(message: Message) -> None:
                 await message.answer_photo(
                     photo=chart_buf,
                     caption=stats_text.strip(),
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    disable_notification=True
                 )
                 chart_buf.close()
             except Exception as chart_error:
                 logger.error(f"Error creating hours chart: {chart_error}\n{traceback.format_exc()}")
                 await message.answer(
                     f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    disable_notification=True
                 )
             
         elif param == "weekday" or param == "weekdays":
@@ -256,7 +259,8 @@ async def cmd_stats(message: Message) -> None:
                     "📊 <b>Статистика активности по дням недели</b>\n\n"
                     "📅 Период: все время\n\n"
                     "❌ Пока нет данных для отображения графика.",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    disable_notification=True
                 )
                 return
             
@@ -279,14 +283,16 @@ async def cmd_stats(message: Message) -> None:
                 await message.answer_photo(
                     photo=chart_buf,
                     caption=stats_text.strip(),
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    disable_notification=True
                 )
                 chart_buf.close()
             except Exception as chart_error:
                 logger.error(f"Error creating weekdays chart: {chart_error}\n{traceback.format_exc()}")
                 await message.answer(
                     f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    disable_notification=True
                 )
             
         elif param == "year":
@@ -315,17 +321,19 @@ async def cmd_stats(message: Message) -> None:
                     await message.answer_photo(
                         photo=chart_buf,
                         caption=stats_text.strip(),
-                        parse_mode="HTML"
+                        parse_mode="HTML",
+                        disable_notification=True
                     )
                     chart_buf.close()
                 except Exception as chart_error:
                     logger.error(f"Error creating months chart: {chart_error}\n{traceback.format_exc()}")
                     await message.answer(
                         f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
-                        parse_mode="HTML"
+                        parse_mode="HTML",
+                        disable_notification=True
                     )
             else:
-                await message.answer(stats_text.strip(), parse_mode="HTML")
+                await message.answer(stats_text.strip(), parse_mode="HTML", disable_notification=True)
                 
         elif param == "all":
             # Статистика за все время
@@ -344,7 +352,7 @@ async def cmd_stats(message: Message) -> None:
 {users_text}
             """
             
-            await message.answer(stats_text.strip(), parse_mode="HTML")
+            await message.answer(stats_text.strip(), parse_mode="HTML", disable_notification=True)
             
         else:
             # Попытка распознать номер месяца (1-12)
@@ -368,7 +376,7 @@ async def cmd_stats(message: Message) -> None:
                 
                 # Проверяем, не будущий ли это месяц (должно быть первым)
                 if target_year > current_year or (target_year == current_year and month_number > current_month):
-                    await message.answer("⏳ Ждем ваши чаепития в будущем! 🍵")
+                    await message.answer("⏳ Ждем ваши чаепития в будущем! 🍵", disable_notification=True)
                     return
                 
                 # Проверяем ограничение (текущий месяц - 11 месяцев назад)
@@ -379,7 +387,7 @@ async def cmd_stats(message: Message) -> None:
                     months_ago = (current_year - target_year) * 12 + (current_month - month_number)
                 
                 if months_ago > 11:
-                    await message.answer("❌ Доступна статистика только за последние 12 месяцев.")
+                    await message.answer("❌ Доступна статистика только за последние 12 месяцев.", disable_notification=True)
                     return
                 
                 stats = db_repo.get_stats_by_month(month_number, target_year)
@@ -407,17 +415,19 @@ async def cmd_stats(message: Message) -> None:
                         await message.answer_photo(
                             photo=chart_buf,
                             caption=stats_text.strip(),
-                            parse_mode="HTML"
+                            parse_mode="HTML",
+                            disable_notification=True
                         )
                         chart_buf.close()
                     except Exception as chart_error:
                         logger.error(f"Error creating days chart: {chart_error}\n{traceback.format_exc()}")
                         await message.answer(
                             f"{stats_text.strip()}\n\n⚠️ Не удалось создать график.",
-                            parse_mode="HTML"
+                            parse_mode="HTML",
+                            disable_notification=True
                         )
                 else:
-                    await message.answer(stats_text.strip(), parse_mode="HTML")
+                    await message.answer(stats_text.strip(), parse_mode="HTML", disable_notification=True)
                     
             except ValueError:
                 await message.answer(
@@ -429,7 +439,8 @@ async def cmd_stats(message: Message) -> None:
                     "• <code>/stats all</code> - статистика за все время\n"
                     "• <code>/stats hour</code> - активность по часам за все время\n"
                     "• <code>/stats weekday</code> - активность по дням недели за все время",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    disable_notification=True
                 )
         
         logger.info(f"Extended stats viewed by {get_user_display_name(message.from_user)}: {param}")
@@ -445,11 +456,12 @@ async def cmd_stats(message: Message) -> None:
             "• <code>/stats all</code> - статистика за все время\n"
             "• <code>/stats hour</code> - активность по часам за все время\n"
             "• <code>/stats weekday</code> - активность по дням недели за все время",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            disable_notification=True
         )
         logger.warning(f"Invalid stats parameter: {param}, error: {ve}")
     except Exception as e:
-        await message.answer("❌ Произошла ошибка при получении статистики.")
+        await message.answer("❌ Произошла ошибка при получении статистики.", disable_notification=True)
         logger.error(f"Error in stats command: {e}\n{traceback.format_exc()}")
 
 
@@ -464,12 +476,12 @@ async def cmd_reset(message: Message) -> None:
     
     # Проверяем права доступа
     if config.RESET_ADMIN_ONLY and not is_admin(message.from_user.id):
-        await message.answer("❌ Эта команда доступна только администраторам.")
+        await message.answer("❌ Эта команда доступна только администраторам.", disable_notification=True)
         logger.warning(f"Unauthorized reset attempt by {get_user_display_name(message.from_user)}")
         return
     
     deleted = db_repo.reset_today()
-    await message.answer(f"✅ Счётчик сброшен. Удалено записей: {deleted}")
+    await message.answer(f"✅ Счётчик сброшен. Удалено записей: {deleted}", disable_notification=True)
     logger.info(f"Forwards reset by admin {get_user_display_name(message.from_user)}, deleted: {deleted}")
 
 
@@ -485,7 +497,7 @@ async def cmd_ban(message: Message) -> None:
     
     # Проверяем права доступа
     if config.BAN_ADMIN_ONLY and not is_admin(message.from_user.id):
-        await message.answer("❌ Эта команда доступна только администраторам.")
+        await message.answer("❌ Эта команда доступна только администраторам.", disable_notification=True)
         logger.warning(f"Unauthorized ban attempt by {get_user_display_name(message.from_user)}")
         return
     
@@ -496,7 +508,8 @@ async def cmd_ban(message: Message) -> None:
         await message.answer(
             "❌ Неверный формат команды.\n"
             "Используйте: /ban @username hours [reason]\n"
-            "Пример: /ban @user123 24 Спам"
+            "Пример: /ban @user123 24 Спам",
+            disable_notification=True
         )
         return
     
@@ -509,7 +522,7 @@ async def cmd_ban(message: Message) -> None:
         if hours <= 0:
             raise ValueError("Hours must be positive")
     except ValueError:
-        await message.answer("❌ Количество часов должно быть положительным числом.")
+        await message.answer("❌ Количество часов должно быть положительным числом.", disable_notification=True)
         return
     
     # Извлекаем причину (если есть)
@@ -523,12 +536,12 @@ async def cmd_ban(message: Message) -> None:
     else:
         # Если не ответ на сообщение, пытаемся найти пользователя по username
         # В реальном боте здесь нужно было бы использовать API Telegram для поиска пользователя
-        await message.answer("❌ Пожалуйста, ответьте на сообщение пользователя, которого хотите забанить.")
+        await message.answer("❌ Пожалуйста, ответьте на сообщение пользователя, которого хотите забанить.", disable_notification=True)
         return
     
     # Проверяем, что не баним админа
     if target_user_id in config.ADMINS:
-        await message.answer("❌ Нельзя забанить администратора.")
+        await message.answer("❌ Нельзя забанить администратора.", disable_notification=True)
         return
     
     # Добавляем бан в базу данных
@@ -550,7 +563,7 @@ async def cmd_ban(message: Message) -> None:
     if reason:
         ban_text += f"📝 Причина: {reason}\n"
     
-    await message.answer(ban_text.strip(), parse_mode="HTML")
+    await message.answer(ban_text.strip(), parse_mode="HTML", disable_notification=True)
     logger.info(f"User {target_display_name} banned by {admin_name} for {hours} hours, reason: {reason}")
 
 
@@ -566,7 +579,7 @@ async def cmd_unban(message: Message) -> None:
     
     # Проверяем права доступа
     if config.UNBAN_ADMIN_ONLY and not is_admin(message.from_user.id):
-        await message.answer("❌ Эта команда доступна только администраторам.")
+        await message.answer("❌ Эта команда доступна только администраторам.", disable_notification=True)
         logger.warning(f"Unauthorized unban attempt by {get_user_display_name(message.from_user)}")
         return
     
@@ -583,19 +596,20 @@ async def cmd_unban(message: Message) -> None:
             await message.answer(
                 "❌ Неверный формат команды.\n"
                 "Используйте: /unban @username\n"
-                "Или ответьте на сообщение пользователя командой /unban"
+                "Или ответьте на сообщение пользователя командой /unban",
+                disable_notification=True
             )
             return
         
         # Извлекаем username (убираем @ если есть)
         target_username = args[0].lstrip('@')
-        await message.answer("❌ Пожалуйста, ответьте на сообщение пользователя, которого хотите разбанить.")
+        await message.answer("❌ Пожалуйста, ответьте на сообщение пользователя, которого хотите разбанить.", disable_notification=True)
         return
     
     # Проверяем, забанен ли пользователь
     ban_info = db_repo.is_user_banned(target_user_id)
     if not ban_info:
-        await message.answer(f"ℹ️ Пользователь {target_display_name} не забанен.")
+        await message.answer(f"ℹ️ Пользователь {target_display_name} не забанен.", disable_notification=True)
         return
     
     # Снимаем бан
@@ -608,10 +622,10 @@ async def cmd_unban(message: Message) -> None:
         unban_text += f"👤 Пользователь: {target_display_name}\n"
         unban_text += f"👮 Администратор: {admin_name}"
         
-        await message.answer(unban_text.strip(), parse_mode="HTML")
+        await message.answer(unban_text.strip(), parse_mode="HTML", disable_notification=True)
         logger.info(f"User {target_display_name} unbanned by {admin_name}")
     else:
-        await message.answer(f"❌ Ошибка при снятии бана с пользователя {target_display_name}.")
+        await message.answer(f"❌ Ошибка при снятии бана с пользователя {target_display_name}.", disable_notification=True)
 
 
 @router.message(Command(config.MAIN_COMMAND))
@@ -643,7 +657,7 @@ async def cmd_tea(message: Message) -> None:
             ban_text += f"📝 Причина: {ban_info['reason']}\n"
         ban_text += f"👮 Забанил: {ban_info['banned_by_username']}"
         
-        await message.answer(ban_text.strip(), parse_mode="HTML")
+        await message.answer(ban_text.strip(), parse_mode="HTML", disable_notification=True)
         logger.warning(f"Banned user {username} tried to use /tea")
         return
     
@@ -667,7 +681,8 @@ async def cmd_tea(message: Message) -> None:
             
             await message.answer(
                 f"⏳ Слишком рано! Следующий анонс через {minutes}м {seconds}с",
-                parse_mode="HTML"
+                parse_mode="HTML",
+                disable_notification=True
             )
             logger.warning(f"Global timeout violation by {username}, {minutes}m {seconds}s remaining")
             return
@@ -675,7 +690,7 @@ async def cmd_tea(message: Message) -> None:
     # Проверяем лимит
     today_count = db_repo.get_today_count()
     if today_count >= config.DAILY_LIMIT:
-        await message.answer("⏰ Следующий анонс завтра!")
+        await message.answer("⏰ Следующий анонс завтра!", disable_notification=True)
         logger.warning(f"Limit reached for {username}")
         return
     
@@ -726,15 +741,15 @@ async def cmd_tea(message: Message) -> None:
         
         # Обновляем счётчик
         remaining = config.DAILY_LIMIT - today_count - 1
-        await message.answer(f"✅ Отправлено! Осталось {remaining} пересылок.")
+        await message.answer(f"✅ Отправлено! Осталось {remaining} пересылок.", disable_notification=True)
         
         logger.info(f"Sent {message_type} tea by {username}")
         
     except TelegramAPIError as e:
-        await message.answer("❌ Ошибка при отправке сообщения в канал.")
+        await message.answer("❌ Ошибка при отправке сообщения в канал.", disable_notification=True)
         logger.error(f"Failed to send message to channel: {e}")
     except Exception as e:
-        await message.answer("❌ Произошла непредвиденная ошибка.")
+        await message.answer("❌ Произошла непредвиденная ошибка.", disable_notification=True)
         logger.error(f"Unexpected error in tea command: {e}")
 
 
@@ -768,7 +783,7 @@ async def cmd_quot(message: Message) -> None:
             ban_text += f"📝 Причина: {ban_info['reason']}\n"
         ban_text += f"👮 Забанил: {ban_info['banned_by_username']}"
         
-        await message.answer(ban_text.strip(), parse_mode="HTML")
+        await message.answer(ban_text.strip(), parse_mode="HTML", disable_notification=True)
         logger.warning(f"Banned user {username} tried to use /quot")
         return
     
@@ -792,7 +807,8 @@ async def cmd_quot(message: Message) -> None:
             
             await message.answer(
                 f"⏳ Слишком рано! Следующий анонс через {minutes}м {seconds}с",
-                parse_mode="HTML"
+                parse_mode="HTML",
+                disable_notification=True
             )
             logger.warning(f"Global timeout violation by {username}, {minutes}m {seconds}s remaining")
             return
@@ -800,7 +816,7 @@ async def cmd_quot(message: Message) -> None:
     # Проверяем лимит
     today_count = db_repo.get_today_count()
     if today_count >= config.DAILY_LIMIT:
-        await message.answer("⏰ Следующий анонс завтра!")
+        await message.answer("⏰ Следующий анонс завтра!", disable_notification=True)
         logger.warning(f"Limit reached for {username}")
         return
     
@@ -850,14 +866,14 @@ async def cmd_quot(message: Message) -> None:
         
         # Обновляем счётчик
         remaining = config.DAILY_LIMIT - today_count - 1
-        await message.answer(f"✅ Отправлено! Осталось {remaining} пересылок.")
+        await message.answer(f"✅ Отправлено! Осталось {remaining} пересылок.", disable_notification=True)
         
         logger.info(f"Sent {message_type} quote by {username}")
         
     except TelegramAPIError as e:
-        await message.answer("❌ Ошибка при отправке сообщения в канал.")
+        await message.answer("❌ Ошибка при отправке сообщения в канал.", disable_notification=True)
         logger.error(f"Failed to send message to channel: {e}")
     except Exception as e:
-        await message.answer("❌ Произошла непредвиденная ошибка.")
+        await message.answer("❌ Произошла непредвиденная ошибка.", disable_notification=True)
         logger.error(f"Unexpected error in quot command: {e}")
 
